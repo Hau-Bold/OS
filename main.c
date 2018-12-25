@@ -6,9 +6,10 @@
 #define MAX_COUNT_OF_PROCESSES 100 // defines how much processes there can be....
 #define TRUE 1
 
-static uint32_t pid=0;//to assign a pid to a process:value is only incremented.....
-static uint32_t currentId=0;//saves the place of the process in the queue which is running, nothing in common with pid....
-static uint32_t countOfProcesses=0;//holds the count of processes beeing active in the queue, used to "allocate memory"....
+uint32_t pid=0;//to assign a pid to a process:value is only incremented.....
+uint32_t currentId=0;//saves the place of the process in the queue which is running, nothing in common with pid....
+uint32_t previousId=0;
+uint32_t countOfProcesses=0;//holds the count of processes beeing active in the queue, used to "allocate memory"....
 
 #define RUNNING 1
 #define WAITING 2
@@ -19,7 +20,7 @@ typedef struct processControlBlock
 	uint8_t m_Pid;
 	uint32_t m_Duration;
 	uint32_t m_LastCall;
-	uintptr_t* m_StackPtr;   //  <uintptr_t ? or stack as int?>
+	uintptr_t m_StackPtr;   //  <uintptr_t ? or stack as int?>
 	uint32_t m_Stack[32];
 	int m_Status;
 	void (*m_Func)(void);
@@ -48,7 +49,7 @@ void causeHardFault(void);
 
 static pcb * ptr;//the pointer to the table of tasks
 extern void firstProcess(uintptr_t stackPtr);//R0 - R3 
-extern void contextSwitch(uintptr_t newCtx,uintptr_t oldCtx);
+extern void contextSwitch(uintptr_t newCtx,uintptr_t *oldCtx);
 
 int main(){
 		
@@ -61,7 +62,7 @@ int main(){
 	ptr = processTable;
 	
 	//starte ersten prozess:
-	firstProcess(processTable[currentId].m_StackPtr);
+	firstProcess((uintptr_t)processTable[currentId].m_StackPtr);
 	
 }//main
 
@@ -99,9 +100,12 @@ void led2(void)
 
 void yield(void)
 {
-	currentProcess->m_Status=WAITING;
+	//currentProcess->m_Status=WAITING;
+	previousId = currentId;
 	getNextPid();//move processCounter
-	schedule();
+	//schedule(); //brauchen wir hier nicht mehr weil durch contextSwitch ersetzt
+	
+	contextSwitch(processTable[currentId].m_StackPtr,&processTable[previousId].m_StackPtr);
 }
 
 void getNextPid(void)
@@ -117,8 +121,8 @@ void initProcessControlBlock(pcb* process,uint32_t duration,uint32_t lastCall,ui
 	process->m_Func = func;
 	process->m_Pid = pid;
 	pid++;
-	process->m_Stack[31]=(uintptr_t)func; 
 	process->m_StackPtr = (uintptr_t)&(process->m_Stack[31])-9*4;//is this castable???????
+	process->m_Stack[31]=(uintptr_t)func; 
 	
 	countOfProcesses++;
 }
@@ -148,8 +152,8 @@ void deleteCurrentProcess(void)
 	//means last process occurs twice, and last occurence may be overwritten....
 	for(int i = currentId+1;i < countOfProcesses-1;i++)
 	{
-		pcb* current = processTable[i];//copy content from nextProcess into current
-		pcb* next = processTable[i+1];
+		pcb* current = &processTable[i];//copy content from nextProcess into current
+		pcb* next = &processTable[i+1];
 		
 		current->m_Pid = next->m_Pid;
 		current->m_Duration = next->m_Duration;
